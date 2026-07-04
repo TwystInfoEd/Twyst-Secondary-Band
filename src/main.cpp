@@ -1,19 +1,58 @@
 #include "../include/main.h"
 #include "../lib/IMU.h"
 #include "../lib/TwystBackend/TwystBackend.h"
+#include "../include/ble_band.h"
 
 IMU imu;
 TwystBackendClient backend;
 bool backendSessionStarted = false;
 String backendResponse;
+String bleSerialBuffer;
+
+namespace {
+
+void handleBleSerialCommand(const String &command)
+{
+  if (command.length() == 0) {
+    return;
+  }
+
+  if (command.equalsIgnoreCase("ping") ||
+      command.equalsIgnoreCase("status") ||
+      command.equalsIgnoreCase("hello")) {
+    Serial.printf("[SEC-BLE] USB -> %s\n", command.c_str());
+    bleSendCommand(command);
+    return;
+  }
+
+  Serial.printf("[SEC-BLE] USB command ignored: %s\n", command.c_str());
+}
+
+void pollBleSerial()
+{
+  while (Serial.available() > 0) {
+    const char character = static_cast<char>(Serial.read());
+    if (character == '\r' || character == '\n') {
+      bleSerialBuffer.trim();
+      handleBleSerialCommand(bleSerialBuffer);
+      bleSerialBuffer = "";
+      continue;
+    }
+
+    bleSerialBuffer += character;
+  }
+}
+
+} // namespace
 
 void setup()
 {
   Serial.begin(BAUDRATE);
-  // Give serial monitor time to reconnect after reboot
+  // give serial monitor time to reconnect after reboot
   delay(2000);
   Serial.println("Initializing...");
   imu.init();
+  initBleClient();
 
 // #ifdef WIFI_REPORT
 //   backend.setBaseUrl(serverUrl);
@@ -46,6 +85,9 @@ void setup()
 
 void loop()
 {
+  pollBleSerial();
+  bleClientLoop();
+
 // update (dt is unused in current implementation but kept for compatibility)
   imu.update(0.02);
 
@@ -109,19 +151,18 @@ void loop()
   
 // #endif
 
-  Serial.print("RAW Acc: "); Serial.print(axr); Serial.print(","); Serial.print(ayr); Serial.print(","); Serial.print(azr);
-  Serial.print("  |  g: "); Serial.print(gxr); Serial.print(","); Serial.print(gyr); Serial.print(","); Serial.print(gzr);
-  // Serial.print("  |  mag: "); Serial.print(mxr); Serial.print(","); Serial.print(myr); Serial.print(","); Serial.print(mzr);
-  // Serial.print(mag_ok ? "" : "  [read failed]");
-  Serial.println();
+//// UNCOMM
+  // Serial.print("RAW Acc: "); Serial.print(axr); Serial.print(","); Serial.print(ayr); Serial.print(","); Serial.print(azr);
+  // Serial.print("  |  g: "); Serial.print(gxr); Serial.print(","); Serial.print(gyr); Serial.print(","); Serial.print(gzr);
+ 
+  // Serial.println();
 
-  Serial.print("Proc Acc[g]: "); Serial.print(ax, 3); Serial.print(", "); Serial.print(ay, 3); Serial.print(", "); Serial.println(az, 3);
-  Serial.print("Proc Gyro[deg/s]: "); Serial.print(gx, 3); Serial.print(", "); Serial.print(gy, 3); Serial.print(", "); Serial.println(gz, 3);
-  // Serial.print("Proc Mag[mG]: "); Serial.print(mx, 3); Serial.print(", "); Serial.print(my, 3); Serial.print(", "); Serial.println(mz, 3);
+  // Serial.print("Proc Acc[g]: "); Serial.print(ax, 3); Serial.print(", "); Serial.print(ay, 3); Serial.print(", "); Serial.println(az, 3);
+  // Serial.print("Proc Gyro[deg/s]: "); Serial.print(gx, 3); Serial.print(", "); Serial.print(gy, 3); Serial.print(", "); Serial.println(gz, 3);
+  
+  // Serial.print("Angles [deg] R/P/Y: "); Serial.print(roll, 2); Serial.print(", "); Serial.print(pitch, 2); Serial.print(", "); Serial.println(yaw, 2);
+  // Serial.print("Temp [C]: "); Serial.println(temp, 2);
 
-  Serial.print("Angles [deg] R/P/Y: "); Serial.print(roll, 2); Serial.print(", "); Serial.print(pitch, 2); Serial.print(", "); Serial.println(yaw, 2);
-  Serial.print("Temp [C]: "); Serial.println(temp, 2);
-
-  Serial.println("------------------------------------------------"); 
+  // Serial.println("------------------------------------------------"); 
   delay(100);
 }
