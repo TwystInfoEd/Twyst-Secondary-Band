@@ -152,17 +152,17 @@ void loop()
 // #endif
 
 //// UNCOMM
-  // Serial.print("RAW Acc: "); Serial.print(axr); Serial.print(","); Serial.print(ayr); Serial.print(","); Serial.print(azr);
-  // Serial.print("  |  g: "); Serial.print(gxr); Serial.print(","); Serial.print(gyr); Serial.print(","); Serial.print(gzr);
+  Serial.print("RAW Acc: "); Serial.print(axr); Serial.print(","); Serial.print(ayr); Serial.print(","); Serial.print(azr);
+  Serial.print("  |  g: "); Serial.print(gxr); Serial.print(","); Serial.print(gyr); Serial.print(","); Serial.print(gzr);
  
-  // Serial.println();
+  Serial.println();
 
-  // Serial.print("Proc Acc[g]: "); Serial.print(ax, 3); Serial.print(", "); Serial.print(ay, 3); Serial.print(", "); Serial.println(az, 3);
-  // Serial.print("Proc Gyro[deg/s]: "); Serial.print(gx, 3); Serial.print(", "); Serial.print(gy, 3); Serial.print(", "); Serial.println(gz, 3);
+  Serial.print("Proc Acc[g]: "); Serial.print(ax, 3); Serial.print(", "); Serial.print(ay, 3); Serial.print(", "); Serial.println(az, 3);
+  Serial.print("Proc Gyro[deg/s]: "); Serial.print(gx, 3); Serial.print(", "); Serial.print(gy, 3); Serial.print(", "); Serial.println(gz, 3);
   
-  // Serial.print("Angles [deg] R/P/Y: "); Serial.print(roll, 2); Serial.print(", "); Serial.print(pitch, 2); Serial.print(", "); Serial.println(yaw, 2);
-  // Serial.print("Temp [C]: "); Serial.println(temp, 2);
+  Serial.print("Angles [deg] R/P/Y: "); Serial.print(roll, 2); Serial.print(", "); Serial.print(pitch, 2); Serial.print(", "); Serial.println(yaw, 2);
+  Serial.print("Temp [C]: "); Serial.println(temp, 2);
 
-  // Serial.println("------------------------------------------------"); 
+  Serial.println("------------------------------------------------"); 
   delay(100);
 }

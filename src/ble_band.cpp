@@ -28,6 +28,33 @@ static int s_disconnectReason = 0;
 static unsigned long s_lostSinceMs = 0;
 static unsigned long s_readySinceMs = 0;
 static unsigned long s_lastTestCommandMs = 0;
+static unsigned long s_lastLinkStatusMs = 0;
+
+bool mainConnected() {
+    return s_state == SecBleState::Ready;
+}
+
+const char *stateName() {
+    switch (s_state) {
+        case SecBleState::Idle:       return "idle";
+        case SecBleState::Scanning:   return "scanning";
+        case SecBleState::Connecting: return "connecting";
+        case SecBleState::Ready:      return "ready";
+        case SecBleState::Lost:       return "lost";
+    }
+    return "unknown";
+}
+
+// Printed once a second regardless of state so the USB-side bridge (and,
+// through it, the Python backend) always has a fresh liveness signal for
+// both bands: this line being seen at all means the secondary band is
+// alive and talking over serial; main_connected reflects whether the BLE
+// link to the main band is currently up.
+void printLinkStatus() {
+    Serial.printf("LINK main_connected=%d state=%s uptime_ms=%lu\n",
+                  mainConnected() ? 1 : 0, stateName(), millis());
+}
+
 
 void clearTarget() {
     if (s_targetDevice != nullptr) {
@@ -226,6 +253,12 @@ void initBleClient() {
 }
 
 void bleClientLoop() {
+    const unsigned long nowLink = millis();
+    if (nowLink - s_lastLinkStatusMs >= 1000) {
+        s_lastLinkStatusMs = nowLink;
+        printLinkStatus();
+    }
+
     switch (s_state) {
         case SecBleState::Idle:
             startScan();
