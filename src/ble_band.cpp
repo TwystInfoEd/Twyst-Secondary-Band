@@ -55,7 +55,6 @@ void printLinkStatus() {
                   mainConnected() ? 1 : 0, stateName(), millis());
 }
 
-
 void clearTarget() {
     if (s_targetDevice != nullptr) {
         delete s_targetDevice;
@@ -100,17 +99,14 @@ void onMainNotify(NimBLERemoteCharacteristic *characteristic, uint8_t *data, siz
     }
     Serial.println();
 
-    if (payload.startsWith("heartbeat")) {
-        Serial.printf("[SEC-BLE] RX <- %s\n", payload.c_str());
-        return;
-    }
-
-    if (payload.startsWith("imu ")) {
-        Serial.printf("[SEC-BLE] RX <- %s\n", payload.c_str());
-        return;
-    }
-
     Serial.printf("[SEC-BLE] RX <- %s\n", payload.c_str());
+
+    // Only full-frame dual-band payloads get re-emitted for the bridge to
+    // pick up. Everything else (heartbeat, ping/pong, status, the old
+    // angle-only "imu " format) is just logged above, not forwarded.
+    if (payload.startsWith("imu2 ")) {
+        Serial.printf("MAIN %s\n", payload.c_str());
+    }
 }
 
 bool sendCommand(const char *command) {
@@ -313,4 +309,8 @@ void bleClientLoop() {
 
 bool bleSendCommand(const String &command) {
     return sendCommand(command.c_str());
+}
+
+bool bleMainBandConnected() {
+    return mainConnected();
 }
