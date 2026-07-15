@@ -74,6 +74,11 @@ float dt = (now - last) / 1000000.0f;
 
 last = now;
 
+const float kMaxDt = 0.03f; // ~3x the nominal 10ms loop
+if (dt > kMaxDt || dt <= 0.0f) {
+    dt = 0.01f; // fall back to nominal loop period
+}
+
 imu.update(dt);
 
   // Raw counts
@@ -109,8 +114,15 @@ imu.update(dt);
 // Single-line, bridge-parseable frame. Prefixed "SEC" so esp32_bridge.py
   // can tell this apart from a "MAIN ..." line relayed from the main band,
   // and from "LINK ..." status lines.
-  Serial.printf("SEC acc_x=%.3f acc_y=%.3f acc_z=%.3f gyro_x=%.3f gyro_y=%.3f gyro_z=%.3f roll=%.2f pitch=%.2f yaw=%.2f\n",
-                ax, ay, az, gx, gy, gz, roll, pitch, yaw);
+  Serial.printf(
+"SEC ts=%lu acc_x=%.3f acc_y=%.3f acc_z=%.3f "
+"gyro_x=%.3f gyro_y=%.3f gyro_z=%.3f "
+"roll=%.2f pitch=%.2f yaw=%.2f\n",
+now,
+ax, ay, az,
+gx, gy, gz,
+roll, pitch, yaw
+);
  
-  //delay(100);
+  delay(100);
 }
