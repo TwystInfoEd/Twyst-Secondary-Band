@@ -52,6 +52,12 @@ void setup()
   delay(2000);
   Serial.println("Initializing...");
   imu.init();
+  Serial.println("Keep the IMU still...");
+delay(3000);
+
+imu.calibrateAccelGyro();
+
+Serial.println("Calibration done.");
   initBleClient();
 }
 
@@ -60,8 +66,15 @@ void loop()
   pollBleSerial();
   bleClientLoop();
 
-// update (dt is unused in current implementation but kept for compatibility)
-  imu.update(0.02);
+static uint32_t last = micros();
+
+uint32_t now = micros();
+
+float dt = (now - last) / 1000000.0f;
+
+last = now;
+
+imu.update(dt);
 
   // Raw counts
   // int16_t axr = imu.readAccRawX();
@@ -99,5 +112,5 @@ void loop()
   Serial.printf("SEC acc_x=%.3f acc_y=%.3f acc_z=%.3f gyro_x=%.3f gyro_y=%.3f gyro_z=%.3f roll=%.2f pitch=%.2f yaw=%.2f\n",
                 ax, ay, az, gx, gy, gz, roll, pitch, yaw);
  
-  delay(100);
+  //delay(100);
 }
