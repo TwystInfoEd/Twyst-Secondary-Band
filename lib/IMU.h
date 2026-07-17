@@ -37,32 +37,14 @@ struct IMUSensorData {
     float roll, pitch, yaw;  // Computed angles (degrees)
 };
 
-struct KalmanFilter {
-    // Kalman filter parameters
-    float Q_angle;
-    float Q_bias;
-    float R_measure;
-    float roll_angle;
-    float roll_bias;
-    float roll_P[2][2];
-    float pitch_angle;
-    float pitch_bias;
-    float pitch_P[2][2];
-    
-    KalmanFilter() {
-        Q_angle = 0.001;
-        Q_bias = 0.003;
-        R_measure = 0.03;
-        roll_angle = 0;
-        roll_bias = 0;
-        pitch_angle = 0;
-        pitch_bias = 0;
-        for (int i = 0; i < 2; i++) {
-            for (int j = 0; j < 2; j++) {
-                roll_P[i][j] = 0;
-                pitch_P[i][j] = 0;
-            }
-        }
+struct MadgwickFilter {
+    float beta;           // filter gain — higher = trusts accel more, lower = trusts gyro more
+    float q0, q1, q2, q3; // orientation quaternion, initialized to identity (no rotation)
+
+    MadgwickFilter() {
+        beta = 0.1f;      // good starting point; tune between ~0.03 (smoother, more drift)
+                           // and ~0.2 (snappier, noisier) depending on feel
+        q0 = 1.0f; q1 = 0.0f; q2 = 0.0f; q3 = 0.0f;
     }
 };
 
@@ -100,9 +82,9 @@ public:
     float getMagBiasX() const;
     float getMagBiasY() const;
     float getMagBiasZ() const;
-    
+
 private:
-    KalmanFilter kalman;
+    MadgwickFilter madgwick;
     IMUSensorData sensorData;
     // Calibration values (in sensor native units)
     float acc_bias[3] {0.f, 0.f, 0.f};   // in LSB
@@ -112,13 +94,14 @@ private:
     float mag_factory_adjust[3] {1.f, 1.f, 1.f}; // from fuse ROM
     int16_t last_mag_raw[3] {0, 0, 0};
     bool last_mag_valid {false};
-    
+
     int16_t readWord(uint8_t addr, uint8_t reg);
     int16_t readMagWord(uint8_t reg);
     bool readMagBytes(uint8_t reg, uint8_t* dest, uint8_t count);
     bool readMagData(int16_t &mx_raw, int16_t &my_raw, int16_t &mz_raw);
-    void kalmanUpdate(float angle, float gyroRate, float dt, float &angle_est, float &bias, float P[2][2]);
-    float computeYaw(float ax, float ay, float az, float mx, float my, float mz);
+    // Madgwick orientation filter (6-DOF: accel + gyro, no mag yet)
+    void madgwickUpdateIMU(float gx, float gy, float gz, float ax, float ay, float az, float dt);
+    void quaternionToEuler();
     // helpers
     void initMagFactoryCalibration();
     float getMagResolution(bool m16bit) const;
@@ -200,7 +183,10 @@ bool IMU::init() {
 int16_t IMU::readWord(uint8_t addr, uint8_t reg) {
     Wire.beginTransmission(addr);
     Wire.write(reg);
-    Wire.endTransmission(); // send stop then request
+    uint8_t txStatus = Wire.endTransmission(false); // repeated start, not stop
+    if (txStatus != 0) {
+        return INT16_MIN; // sentinel for "read failed"
+    }
     Wire.requestFrom((uint8_t)addr, (uint8_t)2);
     uint32_t start = millis();
     while (Wire.available() < 2 && (millis() - start) < 20) {
@@ -209,7 +195,7 @@ int16_t IMU::readWord(uint8_t addr, uint8_t reg) {
     if (Wire.available() >= 2) {
         return (int16_t)((Wire.read() << 8) | Wire.read());
     }
-    return 0;
+    return INT16_MIN;
 }
 
 int16_t IMU::readMagWord(uint8_t reg) {
@@ -321,36 +307,69 @@ float IMU::getMagResolution(bool m16bit) const {
     return 10.0f * 4912.0f / 8190.0f;
 }
 
-void IMU::kalmanUpdate(float angle, float gyroRate, float dt, float &angle_est, float &bias, float P[2][2]) {
-    angle_est += dt * (gyroRate - bias);
-    P[0][0] += dt * (dt * P[1][1] - P[0][1] - P[1][0] + kalman.Q_angle);
-    P[0][1] -= dt * P[1][1];
-    P[1][0] -= dt * P[1][1];
-    P[1][1] += kalman.Q_bias * dt;
+void IMU::madgwickUpdateIMU(float gx, float gy, float gz,
+                             float ax, float ay, float az, float dt) {
+    // gx, gy, gz must be in rad/s. ax, ay, az can be in any consistent unit —
+    // they get normalized below.
+    float q0 = madgwick.q0, q1 = madgwick.q1, q2 = madgwick.q2, q3 = madgwick.q3;
 
-    float y = angle - angle_est;
-    float S = P[0][0] + kalman.R_measure;
-    float K[2] = {P[0][0] / S, P[1][0] / S};
-    angle_est += K[0] * y;
-    bias += K[1] * y;
+    // Rate of change of quaternion from gyroscope
+    float qDot1 = 0.5f * (-q1 * gx - q2 * gy - q3 * gz);
+    float qDot2 = 0.5f * ( q0 * gx + q2 * gz - q3 * gy);
+    float qDot3 = 0.5f * ( q0 * gy - q1 * gz + q3 * gx);
+    float qDot4 = 0.5f * ( q0 * gz + q1 * gy - q2 * gx);
 
-    float P00_temp = P[0][0];
-    float P01_temp = P[0][1];
-    P[0][0] -= K[0] * P00_temp;
-    P[0][1] -= K[0] * P01_temp;
-    P[1][0] -= K[1] * P00_temp;
-    P[1][1] -= K[1] * P01_temp;
+    // Only apply accel correction if the reading is valid (not all-zero)
+    float accNorm = sqrtf(ax * ax + ay * ay + az * az);
+    if (accNorm > 1e-6f) {
+        ax /= accNorm; ay /= accNorm; az /= accNorm;
+
+        // Gradient descent correction step
+        float f1 = 2.0f * (q1 * q3 - q0 * q2) - ax;
+        float f2 = 2.0f * (q0 * q1 + q2 * q3) - ay;
+        float f3 = 2.0f * (0.5f - q1 * q1 - q2 * q2) - az;
+
+        float s0 = -2.0f * q2 * f1 + 2.0f * q1 * f2;
+        float s1 =  2.0f * q3 * f1 + 2.0f * q0 * f2 - 4.0f * q1 * f3;
+        float s2 = -2.0f * q0 * f1 + 2.0f * q3 * f2 - 4.0f * q2 * f3;
+        float s3 =  2.0f * q1 * f1 + 2.0f * q2 * f2;
+
+        float sNorm = sqrtf(s0 * s0 + s1 * s1 + s2 * s2 + s3 * s3);
+        if (sNorm > 1e-6f) {
+            s0 /= sNorm; s1 /= sNorm; s2 /= sNorm; s3 /= sNorm;
+            qDot1 -= madgwick.beta * s0;
+            qDot2 -= madgwick.beta * s1;
+            qDot3 -= madgwick.beta * s2;
+            qDot4 -= madgwick.beta * s3;
+        }
+    }
+
+    // Integrate to get new quaternion
+    q0 += qDot1 * dt;
+    q1 += qDot2 * dt;
+    q2 += qDot3 * dt;
+    q3 += qDot4 * dt;
+
+    // Normalize (quaternion must stay unit-length)
+    float qNorm = sqrtf(q0 * q0 + q1 * q1 + q2 * q2 + q3 * q3);
+    madgwick.q0 = q0 / qNorm;
+    madgwick.q1 = q1 / qNorm;
+    madgwick.q2 = q2 / qNorm;
+    madgwick.q3 = q3 / qNorm;
 }
 
-float IMU::computeYaw(float ax, float ay, float az, float mx, float my, float mz) {
-    float rollRad = atan2(ay, az);
-    float pitchRad = atan(-ax / sqrt(ay * ay + az * az));
+void IMU::quaternionToEuler() {
+    float q0 = madgwick.q0, q1 = madgwick.q1, q2 = madgwick.q2, q3 = madgwick.q3;
 
-    float mx_comp = mx * cos(pitchRad) + mz * sin(pitchRad);
-    float my_comp = mx * sin(rollRad) * sin(pitchRad) + my * cos(rollRad) - mz * sin(rollRad) * cos(pitchRad);
+    sensorData.roll  = atan2f(2.0f * (q0 * q1 + q2 * q3),
+                               1.0f - 2.0f * (q1 * q1 + q2 * q2)) * 180.0f / PI;
 
-    float yawRad = atan2(-my_comp, mx_comp);
-    return yawRad * 180.0 / PI;
+    float sinp = 2.0f * (q0 * q2 - q3 * q1);
+    sinp = constrain(sinp, -1.0f, 1.0f); // guard against asin domain errors
+    sensorData.pitch = asinf(sinp) * 180.0f / PI;
+
+    sensorData.yaw   = atan2f(2.0f * (q0 * q3 + q1 * q2),
+                               1.0f - 2.0f * (q2 * q2 + q3 * q3)) * 180.0f / PI;
 }
 
 void IMU::update(float dt) {
@@ -394,16 +413,14 @@ void IMU::update(float dt) {
     int16_t temp_count = readWord(MPU_ADDR, TEMP_OUT_H);
     sensorData.temperature = ((float)temp_count) / 333.87f + 21.0f;
 
-    float rollAcc = atan2(sensorData.ay, sensorData.az) * 180.0 / PI;
-    float pitchAcc = atan(-sensorData.ax / sqrt(sensorData.ay * sensorData.ay + sensorData.az * sensorData.az)) * 180.0 / PI;
-
-    kalmanUpdate(rollAcc, sensorData.gx, dt, kalman.roll_angle, kalman.roll_bias, kalman.roll_P);
-    kalmanUpdate(pitchAcc, sensorData.gy, dt, kalman.pitch_angle, kalman.pitch_bias, kalman.pitch_P);
-    
-    sensorData.roll = kalman.roll_angle;
-    sensorData.pitch = kalman.pitch_angle;
-
-    sensorData.yaw = computeYaw(sensorData.ax, sensorData.ay, sensorData.az, sensorData.mx, sensorData.my, sensorData.mz);
+    madgwickUpdateIMU(
+        sensorData.gx * PI / 180.0f,   // deg/s -> rad/s, Madgwick expects radians
+        sensorData.gy * PI / 180.0f,
+        sensorData.gz * PI / 180.0f,
+        sensorData.ax, sensorData.ay, sensorData.az,
+        dt
+    );
+    quaternionToEuler();
 }
 
 // Raw read helpers
