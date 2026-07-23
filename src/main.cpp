@@ -2,6 +2,7 @@
 #include "../lib/IMU.h"
 #include "../lib/TwystBackend/TwystBackend.h"
 #include "../include/ble_band.h"
+#include "../include/battery.h"
 
 IMU imu;
 TwystBackendClient backend;
@@ -21,6 +22,7 @@ void setup()
   Serial.println("Calibration done.");
 
   initBLE();
+  Battery::begin();
 }
 
 void loop()
@@ -49,18 +51,26 @@ void loop()
   float pitch = imu.getPitch();
   float yaw = imu.getYaw();
 
-  char frame[192];
-  snprintf(frame, sizeof(frame),
+  float battV = Battery::readVoltage();
+  Serial.printf("[BATT DEBUG] enabled=%d voltage=%.3f available=%d\n",
+                Battery::isEnabled(), battV, Battery::isAvailable());
+
+  char frame[224];
+  int len = snprintf(frame, sizeof(frame),
     "ts=%lu acc_x=%.3f acc_y=%.3f acc_z=%.3f "
     "gyro_x=%.3f gyro_y=%.3f gyro_z=%.3f "
     "roll=%.2f pitch=%.2f yaw=%.2f",
     now, ax, ay, az, gx, gy, gz, roll, pitch, yaw);
 
+  if (Battery::isAvailable()) {
+    float battPct = Battery::readPercent();
+    len += snprintf(frame + len, sizeof(frame) - len,
+      " batt_v=%.3f batt_pct=%.1f", battV, battPct);
+  }
+
   if (bleIsConnected()) {
-    // dual-band mode
     bleSendFrame(String(frame));
   } else {
-    // single-band mode
     Serial.printf("SEC %s\n", frame);
   }
 

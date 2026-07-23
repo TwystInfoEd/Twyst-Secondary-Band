@@ -42,8 +42,8 @@ struct MadgwickFilter {
     float q0, q1, q2, q3; // orientation quaternion, initialized to identity (no rotation)
 
     MadgwickFilter() {
-        beta = 0.1f;      // good starting point; tune between ~0.03 (smoother, more drift)
-                           // and ~0.2 (snappier, noisier) depending on feel
+        beta = 0.1f;      // good starting point; tune between ~0.03 for smoother
+                          
         q0 = 1.0f; q1 = 0.0f; q2 = 0.0f; q3 = 0.0f;
     }
 };
@@ -52,7 +52,7 @@ class IMU {
 public:
     IMU();
     bool init();
-    // Calibration API
+    
     void calibrateAccelGyro();
     void calibrateMag();
     void update(float dt);
@@ -61,7 +61,7 @@ public:
     float getPitch() const;
     float getYaw() const;
     float getTemperature() const;
-    // Raw reads
+  
     int16_t readAccRawX();
     int16_t readAccRawY();
     int16_t readAccRawZ();
@@ -72,7 +72,7 @@ public:
     int16_t readMagRawY();
     int16_t readMagRawZ();
     bool readMagRaw(int16_t &mx_raw, int16_t &my_raw, int16_t &mz_raw);
-    // Bias getters
+    
     float getAccBiasX() const;
     float getAccBiasY() const;
     float getAccBiasZ() const;
@@ -86,7 +86,7 @@ public:
 private:
     MadgwickFilter madgwick;
     IMUSensorData sensorData;
-    // Calibration values (in sensor native units)
+    
     float acc_bias[3] {0.f, 0.f, 0.f};   // in LSB
     float gyro_bias[3] {0.f, 0.f, 0.f};  // in LSB
     float mag_bias[3] {0.f, 0.f, 0.f};   // in mG
@@ -107,14 +107,14 @@ private:
     float getMagResolution(bool m16bit) const;
 };
 
-// Implementation
+
 IMU::IMU() {
 }
 
 bool IMU::init() {
     Serial.println("Setting up I2C...");
     Wire.begin(SDA_PIN, SCL_PIN);
-    // increase I2C speed to help avoid bus timeouts
+    
     Wire.setClock(400000);
     delay(100);
 
@@ -128,7 +128,6 @@ bool IMU::init() {
     Serial.print("MPU WHO_AM_I: 0x");
     Serial.println(id, HEX);
 
-    // Accept multiple known WHO_AM_I values (MPU6500/9250/9255 family)
     if ((id != 0x70) && (id != 0x71) && (id != 0x73)) {
         Serial.println("Unknown MPU! Stopping for safety.");
         return false;
@@ -137,13 +136,12 @@ bool IMU::init() {
     Serial.print(id, HEX);
     Serial.println(")");
 
-    // Disable the MPU's I2C master block so the host can talk to the AK8963 directly.
     Wire.beginTransmission(MPU_ADDR);
-    Wire.write(0x6A); // USER_CTRL
+    Wire.write(0x6A); 
     Wire.write(0x00);
     Wire.endTransmission();
 
-    // Enable bypass mode: connect SDA/SCL directly to the magnetometer bus.
+    // enable bypass mode: connect SDA/SCL directly to the magnetometer bus.
     Wire.beginTransmission(MPU_ADDR);
     Wire.write(INT_PIN_CFG);
     Wire.write(0x22);
