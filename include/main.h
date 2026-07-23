@@ -20,14 +20,11 @@
 #include <WiFi.h>
 #include <HTTPClient.h>
 
-// Wi-Fi credentials
 const char* ssid = "Orange-5FmR-2.4G";
 const char* password = "wNpV8M24";
 
-// Twyst backend base URL
 const char* serverUrl = "http://192.168.100.28:8000";
 
-// Default motion name used when recording this board's live stream
 const char* twystMotionName = "twyst_live_session";
 #endif
 

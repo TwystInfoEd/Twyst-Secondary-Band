@@ -2,9 +2,12 @@
 #define SEC_BLE_BAND_H
 
 #include <Arduino.h>
+#include <NimBLEDevice.h>
 
-void initBleClient();
-void bleClientLoop();
-bool bleSendCommand(const String &command);
+void initBLE();
+void bleLoop();
+bool bleIsConnected();
+bool bleSendText(const String &text);
+bool bleSendFrame(const String &frame);
 
 #endif
