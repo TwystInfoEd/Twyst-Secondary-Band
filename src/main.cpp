@@ -1,9 +1,9 @@
 #include "../include/main.h"
-#include "../lib/IMU.h"
+// #include "../lib/IMU.h"
 #include "../lib/TwystBackend/TwystBackend.h"
 #include "../include/ble_band.h"
 #include "../include/battery.h"
-
+#include "../include/bmi270.h"
 IMU imu;
 TwystBackendClient backend;
 bool backendSessionStarted = false;
@@ -14,12 +14,16 @@ void setup()
   Serial.begin(BAUDRATE);
   delay(2000);
   Serial.println("Initializing...");
+
+  // not using uwb for now
+  pinMode(PIN_UWB_CS, OUTPUT);
+  digitalWrite(PIN_UWB_CS, HIGH);
   imu.init();
   Serial.println("Keep the IMU still...");
   delay(3000);
 
   imu.calibrateAccelGyro();
-  Serial.println("Calibration done.");
+  Serial.println("Calibration done. ");
 
   initBLE();
   Battery::begin();
